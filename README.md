@@ -58,3 +58,21 @@ Only legally distributable books are allowed: every upload declares a licence + 
 5. As admin: restrict via a report → book disappears publicly, decision logged.
 6. Confirm user B cannot open `/admin`, cannot fetch a pending book's file, and cannot see user A's library (RLS).
 7. Delete account → rows and files removed.
+
+## 6. Importing legal books (optional)
+
+`scripts/import-books.mjs` fills the library with books that are legally redistributable, so you do not have to upload by hand:
+
+- `openstax` — OpenStax textbooks (Creative Commons).
+- `archive` — Internet Archive items whose metadata carries a Creative Commons or public-domain licence URL (anything without one is skipped).
+
+Each book stores its source URL and licence in `license_evidence`, and is published under your admin account.
+
+```bash
+# in .env.local add:  IMPORT_ADMIN_EMAIL=you@example.com   (an account that already exists)
+npm run import:books -- --source=openstax --dry-run          # preview
+npm run import:books -- --source=openstax --limit=20
+npm run import:books -- --source=archive --category=history --limit=10
+```
+
+Run it on your own computer. Never share or commit the service-role key. Review the results in `/admin/books` and remove anything that looks wrong; the source metadata is only as accurate as its publisher.

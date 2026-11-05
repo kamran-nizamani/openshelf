@@ -4,6 +4,7 @@
  *
  * Imports ONLY books whose source states a redistributable licence:
  *   - openstax : OpenStax textbooks (Creative Commons, usually CC BY)
+ *   - oapen    : OAPEN open-access academic books (only items with a Creative Commons / public-domain rights URL)
  *   - archive  : Internet Archive items whose metadata `licenseurl` is a Creative Commons
  *                licence or a public-domain dedication/mark. Items without that metadata are skipped.
  * Every imported book stores its source URL + licence in `license_evidence`.
@@ -11,6 +12,7 @@
  * Usage (run on your own computer; needs your service-role key, which must never be shared):
  *   node --env-file=.env.local scripts/import-books.mjs --source=openstax --limit=20
  *   node --env-file=.env.local scripts/import-books.mjs --source=archive --category=history --limit=10
+ *   node --env-file=.env.local scripts/import-books.mjs --source=oapen --limit=20
  *   add --dry-run to list what would be imported without writing anything
  *
  * Required env: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, IMPORT_ADMIN_EMAIL
@@ -115,6 +117,39 @@ async function* archive() {
   }
 }
 
+// ---- source: OAPEN (open-access academic books, Creative Commons) -----------
+async function* oapen() {
+  const meta = (item, key) => (item.metadata ?? []).filter((m) => m.key === key).map((m) => m.value);
+  for (let offset = 0; offset < 3000; offset += 100) {
+    let items;
+    try { items = await getJson(`https://library.oapen.org/rest/items?expand=metadata,bitstreams&limit=100&offset=${offset}`); }
+    catch (e) { console.warn(`  OAPEN page failed: ${e.message}`); return; }
+    if (!Array.isArray(items) || items.length === 0) return;
+    for (const it of items) {
+      const lic = String(meta(it, "dc.rights.uri")[0] ?? meta(it, "dc.rights")[0] ?? "");
+      const isPD = /publicdomain/i.test(lic);
+      const isCC = /creativecommons\.org\/licenses\//i.test(lic);
+      if (!isPD && !isCC) continue;
+      const files = it.bitstreams ?? [];
+      const pdf = files.find((f) => f.bundleName === "ORIGINAL" && /pdf/i.test(f.mimeType ?? "") && Number(f.sizeBytes) <= MAX_PDF);
+      if (!pdf?.retrieveLink) continue;
+      const thumb = files.find((f) => f.bundleName === "THUMBNAIL");
+      const title = strip(meta(it, "dc.title")[0] ?? it.name);
+      const authors = meta(it, "dc.contributor.author").concat(meta(it, "dc.contributor.editor")).map(strip).filter(Boolean);
+      const handleUrl = it.handle ? `https://library.oapen.org/handle/${it.handle}` : "https://library.oapen.org";
+      yield {
+        title, author: authors.slice(0, 3).join("; ") || "Various authors", description: strip(meta(it, "dc.description.abstract")[0]),
+        pdf: `https://library.oapen.org${pdf.retrieveLink}`, cover: thumb?.retrieveLink ? `https://library.oapen.org${thumb.retrieveLink}` : null,
+        language: toLang(meta(it, "dc.language")[0]), year: Number(String(meta(it, "dc.date.issued")[0] ?? "").slice(0, 4)) || null,
+        publisher: strip(meta(it, "publisher.name")[0]) || null, license: isPD ? "public_domain" : "creative_commons",
+        evidence: `OAPEN open-access book ${handleUrl} — licence: ${lic}`,
+        categoryText: `${title} ${meta(it, "dc.subject.other").join(" ")} ${meta(it, "dc.subject.classification").join(" ")}`, id: `oapen:${it.handle ?? title}`,
+      };
+    }
+    await sleep(500);
+  }
+}
+
 // ---- main -------------------------------------------------------------------
 async function findAdmin() {
   for (let page = 1; page < 50; page++) {
@@ -139,7 +174,7 @@ const { data: cats } = await db.from("categories").select("id, slug");
 const catId = Object.fromEntries((cats ?? []).map((c) => [c.slug, c.id]));
 const perCategory = {};
 let done = 0;
-const gen = source === "archive" ? archive() : openstax();
+const gen = source === "archive" ? archive() : source === "oapen" ? oapen() : openstax();
 
 for await (const b of gen) {
   if (done >= limit * (source === "archive" && !onlyCategory ? Object.keys(ARCHIVE_TOPICS).length : 1)) break;

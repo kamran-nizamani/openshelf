@@ -64,6 +64,7 @@ Only legally distributable books are allowed: every upload declares a licence + 
 `scripts/import-books.mjs` fills the library with books that are legally redistributable, so you do not have to upload by hand:
 
 - `openstax` — OpenStax textbooks (Creative Commons).
+- `oapen` — OAPEN open-access academic books (Creative Commons / public-domain rights URL required).
 - `archive` — Internet Archive items whose metadata carries a Creative Commons or public-domain licence URL (anything without one is skipped).
 
 Each book stores its source URL and licence in `license_evidence`, and is published under your admin account.
@@ -72,6 +73,7 @@ Each book stores its source URL and licence in `license_evidence`, and is publis
 # in .env.local add:  IMPORT_ADMIN_EMAIL=you@example.com   (an account that already exists)
 npm run import:books -- --source=openstax --dry-run          # preview
 npm run import:books -- --source=openstax --limit=20
+npm run import:books -- --source=oapen --limit=20
 npm run import:books -- --source=archive --category=history --limit=10
 ```
 
